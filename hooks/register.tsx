@@ -21,7 +21,7 @@ const breakdown = atom(
 // Change a tag when that value's fields change: it declines what an earlier
 // version stored, which outlives a reload.
 const where = atom({ plugin: 'hud', key: 'where' } as const, null as Where | null, {
-  shape: 'where-2',
+  shape: 'where-3',
 })
 const runs = atom({ plugin: 'hud', key: 'runs' } as const, [] as Run[], {
   shape: 'runs-1',
@@ -85,14 +85,14 @@ const awsTone = (profile: string | null) =>
         ? 'success'
         : 'text'
 
-// A thin line meter: the filled run in `color`, the rest as a dim track.
+// A line meter: the filled run in `color`, the rest the same glyph in the subtle colour.
 function meter(ui: Ui, fraction: number, width: number, color: string) {
   const { Text } = ui
   const full = Math.max(0, Math.min(width, Math.round(fraction * width)))
   return (
     <Text mono>
       <Text color={color}>{'━'.repeat(full)}</Text>
-      <Text dimColor>{'─'.repeat(width - full)}</Text>
+      <Text color="subtle">{'━'.repeat(width - full)}</Text>
     </Text>
   )
 }
@@ -137,6 +137,7 @@ async function refreshWhere($: EngineInterface) {
   let ahead = 0
   let behind = 0
   let changed = 0
+  let hasUpstream = false
   try {
     const { exitCode, stdout } = await $.process.run(
       ['git', 'status', '--porcelain=v1', '--branch'],
@@ -145,6 +146,7 @@ async function refreshWhere($: EngineInterface) {
     if (exitCode === 0) {
       const [head = '', ...rest] = stdout.split('\n').filter(Boolean)
       branch = head.replace(/^## /, '').split('...')[0] ?? '–'
+      hasUpstream = head.includes('...')
       ahead = Number(/ahead (\d+)/.exec(head)?.[1] ?? 0)
       behind = Number(/behind (\d+)/.exec(head)?.[1] ?? 0)
       changed = rest.length
@@ -153,7 +155,7 @@ async function refreshWhere($: EngineInterface) {
     // Not a repository, or git missing: the tab shows what it has.
   }
   const name = (repo?.root ?? cwd).split('/').filter(Boolean).pop() ?? cwd
-  await update($, where, () => ({ repo: name, branch, ahead, behind, changed, aws }))
+  await update($, where, () => ({ repo: name, branch, hasUpstream, ahead, behind, changed, aws }))
   await pushChip($)
 }
 
@@ -187,8 +189,12 @@ async function contextBody($: EngineInterface, ui: Ui, width: number) {
   const { Box, Text, Button } = ui
   const u = await read($, usage)
   const b = await read($, breakdown)
-  const label = 14
-  const bar = Math.max(8, Math.min(32, width - label - 7))
+  const label = width >= 60 ? 20 : 14
+  const bar = Math.max(8, Math.min(32, width - label - 12))
+  // Breakdown bars are scaled to the largest item, so a big window still shows
+  // which part dominates; the share column says how much of what's used.
+  const top = b?.rows[0]?.tokens ?? 1
+  const used = b?.rows.reduce((sum, r) => sum + r.tokens, 0) || 1
 
   const hero =
     u?.percent !== undefined ? (
@@ -235,8 +241,9 @@ async function contextBody($: EngineInterface, ui: Ui, width: number) {
             {b.rows.slice(0, 7).map(r => (
               <Text mono tabular>
                 {cut(r.name, label - 1).padEnd(label)}
-                {meter(ui, r.tokens / b.max, bar, 'claude')}
+                {meter(ui, r.tokens / top, bar, 'claude')}
                 {` ${k(r.tokens).padStart(5)}`}
+                <Text dimColor>{` ${String(Math.round((r.tokens / used) * 100)).padStart(3)}%`}</Text>
               </Text>
             ))}
             {b.servers.length > 0 && (
@@ -287,7 +294,9 @@ async function whereBody($: EngineInterface, ui: Ui) {
         {row('branch', w.branch)}
         {row(
           'sync',
-          w.ahead === 0 && w.behind === 0 ? (
+          !w.hasUpstream ? (
+            <Text dimColor>no upstream</Text>
+          ) : w.ahead === 0 && w.behind === 0 ? (
             <Text dimColor>even with upstream</Text>
           ) : (
             <Text color="suggestion">

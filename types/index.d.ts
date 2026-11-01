@@ -22,6 +22,7 @@ export type Breakdown = {
 export type Where = {
   repo: string
   branch: string
+  hasUpstream: boolean
   ahead: number
   behind: number
   changed: number

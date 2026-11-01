@@ -1,6 +1,6 @@
 {
   "name": "hud",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Quiet HUD for Claude Code: a context dial under the prompt, toasts when something needs you, a guard against risky commands, and a /hud pane with Context, Where, Agents and Guard tabs",
   "author": { "name": "James Han" },
   "license": "MIT",
